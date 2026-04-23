@@ -21,6 +21,10 @@ class GenerateRequest(BaseModel):
     title: str = Field(..., min_length=3, max_length=200, description="论文标题")
     task_type: TaskType = Field(default=TaskType.review, description="任务类型")
     tone: str = Field(default="严谨、客观、学术", description="风格要求")
+    user_description: Optional[str] = Field(
+        default=None,
+        description="可选，用户自己的研究思路、假设或希望强调的结论",
+    )
     sections: Optional[List[str]] = Field(
         default=None,
         description="可选，指定章节列表。未指定则自动生成标准学术结构",

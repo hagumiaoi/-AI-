@@ -1,4 +1,4 @@
-# 1. 路径准备：确保 input, output, data 文件夹存在，防止报错
+
 import asyncio
 from pathlib import Path
 
@@ -17,18 +17,25 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
 DATA_DIR = BASE_DIR / "data"
+PDF_DIR = INPUT_DIR / "pdf"
+CSV_DIR = INPUT_DIR / "csv"
+IMAGES_DIR = INPUT_DIR / "images"
 
 if (BASE_DIR / ".env").exists():
     load_dotenv(BASE_DIR / ".env", override=True)
 elif (BASE_DIR / ".env.example").exists():
     load_dotenv(BASE_DIR / ".env.example", override=False)
-
+    
+# 1. 路径准备：确保 input, output, data 文件夹存在，防止报错
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
+PDF_DIR.mkdir(parents=True, exist_ok=True)
+CSV_DIR.mkdir(parents=True, exist_ok=True)
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
-    title="AI 论文写作初版 API",
+    title="AI 论文辅助写作",
     description="基于 FastAPI + RAG 的论文草稿生成服务",
     version="0.1.0",
 )
@@ -48,7 +55,7 @@ async def reindex_document(file_path: Path) -> None:
         if not text:
             return
         chunks = doc_processor.split_text(text)
-        vector_store.add_chunks(chunks, file_path.name)
+        vector_store.add_chunks(chunks, doc_processor.source_id(file_path))
         doc_processor.mark_processed(file_path)
     except Exception:
         # Skip unreadable/locked files and continue indexing others.
@@ -63,7 +70,7 @@ def reindex_document_sync(file_path: Path) -> None:
 async def startup_event() -> None:
     global watcher
     current_docs = doc_processor.list_supported_documents()
-    vector_store.prune_sources({p.name for p in current_docs})
+    vector_store.prune_sources({doc_processor.source_id(p) for p in current_docs})
 
     for file_path in doc_processor.find_new_or_changed_documents():
         await reindex_document(file_path)
@@ -99,12 +106,15 @@ async def get_task(task_id: str):
 @app.post("/reindex", tags=["index"])
 async def manual_reindex() -> dict:
     current_docs = doc_processor.list_supported_documents()
-    vector_store.prune_sources({p.name for p in current_docs})
+    vector_store.prune_sources({doc_processor.source_id(p) for p in current_docs})
 
     changed = doc_processor.find_new_or_changed_documents()
     for file_path in changed:
         await reindex_document(file_path)
-    return {"indexed": [p.name for p in changed], "count": len(changed)}
+    return {
+        "indexed": [doc_processor.source_id(p) for p in changed],
+        "count": len(changed),
+    }
 
 
 def _run_generation_task(task_id: str, request: GenerateRequest) -> None:
@@ -125,8 +135,9 @@ def _run_generation_task(task_id: str, request: GenerateRequest) -> None:
             hint = "未检索到可用文献内容。"
             if incompatible:
                 hint += f" 检测到不兼容格式文件：{incompatible}。"
-            hint += " 当前仅支持：pdf、txt、md、docx。若你使用 caj，请先转换为 pdf。"
-            hint += " 若已放入 PDF，请先调用 /reindex 确保文献已入库。"
+            hint += " 当前文本输入目录支持：input/pdf(仅pdf)、input/csv(仅csv)。"
+            hint += " 若你使用 caj，请先转换为 pdf 并放入 input/pdf。"
+            hint += " 若已放入文件，请先调用 /reindex 确保内容已入库。"
             task_manager.update(
                 task_id,
                 status=TaskStatus.failed,
@@ -154,16 +165,48 @@ def _run_generation_task(task_id: str, request: GenerateRequest) -> None:
             stage="generation",
             detail="正在生成论文初稿",
         )
-        result = generator.generate(request, docs)
+
+        last_section = {"name": ""}
+        stream_buffer = {"text": ""}
+
+        def stream_to_terminal(section: str, token: str) -> None:
+            if section != last_section["name"]:
+                if stream_buffer["text"]:
+                    print(f"[StreamingText] {stream_buffer['text']}", flush=True)
+                    stream_buffer["text"] = ""
+                last_section["name"] = section
+                print(f"\n[Streaming] section={section}", flush=True)
+            stream_buffer["text"] += token
+            # Print in short chunks with newline so terminal/collector can render progressively.
+            if len(stream_buffer["text"]) >= 80 or token in {"\n", "。", "！", "？"}:
+                print(f"[StreamingText] {stream_buffer['text']}", flush=True)
+                stream_buffer["text"] = ""
+
+        image_files = doc_processor.list_image_files()
+        result = generator.generate(
+            request,
+            docs,
+            image_files=image_files,
+            stream_callback=stream_to_terminal,
+        )
+        if stream_buffer["text"]:
+            print(f"[StreamingText] {stream_buffer['text']}", flush=True)
+        print("\n[Streaming] generation completed", flush=True)
 
         task_manager.update(
             task_id,
             progress=80,
             stage="formatting",
-            detail="正在输出 Markdown 与 DOCX",
+            detail="正在输出 Markdown、DOCX、Typst/PDF",
         )
         md_file = formatter.save_markdown(task_id, result.markdown)
         docx_file = formatter.save_docx(task_id, result.markdown)
+        typ_file = formatter.save_typst(task_id, result.markdown)
+        pdf_file = formatter.compile_typst_pdf(typ_file)
+
+        outputs = [str(md_file), str(docx_file), str(typ_file)]
+        if pdf_file:
+            outputs.append(str(pdf_file))
 
         task_manager.update(
             task_id,
@@ -171,7 +214,7 @@ def _run_generation_task(task_id: str, request: GenerateRequest) -> None:
             progress=100,
             stage="done",
             detail="完成",
-            output_files=[str(md_file), str(docx_file)],
+            output_files=outputs,
             citations=result.citations,
         )
     except Exception as exc:

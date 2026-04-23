@@ -3,7 +3,7 @@ import re
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Callable, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -190,6 +190,8 @@ class PaperGenerator:
         evidence_summary: str,
         citation_hint: str,
         written_sections: list[str],
+        image_context: str,
+        stream_callback: Optional[Callable[[str, str], None]] = None,
     ) -> str:
         prev_context = "\n\n".join(written_sections[-2:]) if written_sections else ""
         messages = [
@@ -205,9 +207,27 @@ class PaperGenerator:
                     citation_hint=citation_hint,
                     prev_context=prev_context,
                     evidence_summary=evidence_summary,
+                    user_description=(request.user_description or ""),
+                    image_context=image_context,
                 )
             ),
         ]
+
+        # Stream tokens to callback for real-time terminal display.
+        if stream_callback:
+            chunks: list[str] = []
+            try:
+                for chunk in llm.stream(messages):
+                    text = chunk.content if isinstance(chunk.content, str) else ""
+                    if not text:
+                        continue
+                    chunks.append(text)
+                    stream_callback(section_title, text)
+                return "".join(chunks)
+            except Exception:
+                # Fallback to non-streaming call when provider/model does not support streaming.
+                return llm.invoke(messages).content
+
         return llm.invoke(messages).content
 
     def _llm_generate(
@@ -216,9 +236,18 @@ class PaperGenerator:
         outline: List[str],
         context_docs: list,
         citations: Dict[str, str],
+        image_files: Optional[List[Path]] = None,
+        stream_callback: Optional[Callable[[str, str], None]] = None,
     ) -> str:
         llm = self._new_llm()
         citation_hint = ", ".join([f"[{k}]={v}" for k, v in citations.items()])
+        image_files = image_files or []
+        image_context = "\n".join(
+            [
+                f"- 可用图像: {p.as_posix()}"
+                for p in image_files[:20]
+            ]
+        )
         parts = [f"# {request.title}\n"]
         written_sections: list[str] = []
 
@@ -232,6 +261,8 @@ class PaperGenerator:
                 evidence_summary=evidence,
                 citation_hint=citation_hint,
                 written_sections=written_sections,
+                image_context=image_context,
+                stream_callback=stream_callback,
             )
             parts.append(f"## {section}\n")
             parts.append(body.strip())
@@ -240,13 +271,26 @@ class PaperGenerator:
 
         return "\n".join(parts)
 
-    def generate(self, request: GenerateRequest, context_docs: list) -> GenerationResult:
+    def generate(
+        self,
+        request: GenerateRequest,
+        context_docs: list,
+        image_files: Optional[List[Path]] = None,
+        stream_callback: Optional[Callable[[str, str], None]] = None,
+    ) -> GenerationResult:
         if not self.can_call_llm():
             raise RuntimeError("未配置可用模型 API Key，无法生成论文。")
 
         outline = self._build_outline(request)
         citations = self._build_mapping(context_docs)
-        markdown = self._llm_generate(request, outline, context_docs, citations)
+        markdown = self._llm_generate(
+            request,
+            outline,
+            context_docs,
+            citations,
+            image_files=image_files,
+            stream_callback=stream_callback,
+        )
 
         refs = ["\n## 参考文献\n"]
         for idx, source in citations.items():

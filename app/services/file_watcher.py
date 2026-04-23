@@ -7,7 +7,19 @@ from watchdog.observers import Observer
 class _DocumentEventHandler(FileSystemEventHandler):
     def __init__(self, callback):
         self.callback = callback
-        self.supported_suffixes = (".pdf", ".txt", ".md", ".docx")
+        self.supported_suffixes = (
+            ".pdf",
+            ".txt",
+            ".md",
+            ".docx",
+            ".csv",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp",
+            ".gif",
+            ".svg",
+        )
 
     def on_created(self, event):
         if event.is_directory:
@@ -24,7 +36,7 @@ class FileWatcher:
 
     def start(self) -> None:
         handler = _DocumentEventHandler(self.on_document_added)
-        self.observer.schedule(handler, str(self.input_dir), recursive=False)
+        self.observer.schedule(handler, str(self.input_dir), recursive=True)
         self.observer.start()
 
     def stop(self) -> None:

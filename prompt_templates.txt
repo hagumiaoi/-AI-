@@ -30,6 +30,12 @@
 当前章节：{section_title}
 引用映射：{citation_hint}
 
+用户补充思路（优先遵循）：
+{user_description}
+
+可用图像素材（可在正文中按需插入Markdown图片引用，如 ![图注](input/images/xxx.png)）：
+{image_context}
+
 已写内容（避免重复）：
 {prev_context}
 

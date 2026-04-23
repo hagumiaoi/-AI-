@@ -30,11 +30,5 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Keep input/output directories, ignore their contents
-input/*
-!input/.gitkeep
-
-output/*
-!output/.gitkeep
 
 
