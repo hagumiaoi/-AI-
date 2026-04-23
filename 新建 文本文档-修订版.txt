@@ -1,0 +1,43 @@
+问题导入（修订）：
+目标是先做“可运行初版”，验证从论文输入到草稿输出的全流程，不追求一步到位的学术完美质量。
+
+初版范围（MVP）：
+1. 用户将 PDF 论文放入 input 文件夹。
+2. 启动 FastAPI 服务，打开 Swagger 提交写作任务。
+3. 系统完成：增量索引 -> RAG 检索 -> 论文初稿生成 -> 输出 Markdown + DOCX。
+4. 文末自动附参考文献草稿与引用映射表。
+
+技术路线：
+- FastAPI（接口与任务状态）
+- LangChain（检索 + 生成编排）
+- FAISS（本地向量库）
+- watchdog（input 目录监控）
+
+详细任务清单（可执行版）
+第一阶段：文档预处理与索引
+- 文件监控：watchdog 监听 input/ 新增 PDF，触发索引。
+- PDF 解析：提取文本，清洗页眉页脚/页码，截断参考文献区减少噪音。
+- 文本切片：chunk_size=900, overlap=120。
+- 向量化：默认 HuggingFace Embedding（本地模型）写入 FAISS。
+
+第二阶段：后端 API（FastAPI）
+- POST /generate：输入 title、task_type、tone（可选 sections）。
+- GET /tasks/{task_id}：查询状态。
+- POST /reindex：手动增量索引。
+- 异步生成：接口立刻返回 task_id，后台执行写作。
+
+第三阶段：AI 生成逻辑（RAG）
+- 大纲生成：按任务类型生成标准章节。
+- 分段写作：按章节输出，优先引用检索上下文。
+- 引用追踪：建立 [n] -> 源 PDF 文件名映射。
+
+第四阶段：输出与格式化
+- 输出 markdown 到 output/{task_id}.md。
+- 输出 docx 到 output/{task_id}.docx。
+- 自动附“参考文献草稿”（初版允许人工二次编辑）。
+
+第五阶段：优化方向（后续迭代）
+- 增加 OCR（MinerU/PaddleOCR）提升扫描版论文解析质量。
+- 加入 WebSocket 实时进度推送。
+- 接入 Zotero/BibTeX 实现更规范的 GB/T 7714。
+- 加入事实核验链路降低幻觉风险。
