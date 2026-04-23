@@ -40,10 +40,26 @@ class VectorStoreService:
         return set(re.findall(r"[a-z0-9_]+|[\u4e00-\u9fff]+", lowered))
 
     def add_chunks(self, chunks: List[str], source_file: str) -> None:
+        # Replace existing chunks from the same source to avoid stale duplicates.
+        self.docs = [d for d in self.docs if d.metadata.get("source") != source_file]
         self.docs.extend(
             [Document(page_content=chunk, metadata={"source": source_file}) for chunk in chunks]
         )
         self._save()
+
+    def prune_sources(self, allowed_sources: set[str]) -> None:
+        before = len(self.docs)
+        self.docs = [d for d in self.docs if d.metadata.get("source") in allowed_sources]
+        if len(self.docs) != before:
+            self._save()
+
+    def get_documents(self, k: int | None = None) -> List[Document]:
+        if k is None:
+            return list(self.docs)
+        return list(self.docs[:k])
+
+    def has_documents(self) -> bool:
+        return len(self.docs) > 0
 
     def search(self, query: str, k: int = 8) -> List[Document]:
         if not self.docs:
@@ -61,4 +77,6 @@ class VectorStoreService:
             scored.append((score, doc))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [doc for score, doc in scored[:k] if score > 0]
+        # Always return top-k docs, even when keyword overlap is weak,
+        # so downstream generation can still use input corpus content.
+        return [doc for _, doc in scored[:k]]

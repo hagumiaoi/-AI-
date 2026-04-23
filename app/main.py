@@ -1,3 +1,4 @@
+# 1. 路径准备：确保 input, output, data 文件夹存在，防止报错
 import asyncio
 from pathlib import Path
 
@@ -61,6 +62,9 @@ def reindex_document_sync(file_path: Path) -> None:
 @app.on_event("startup")
 async def startup_event() -> None:
     global watcher
+    current_docs = doc_processor.list_supported_documents()
+    vector_store.prune_sources({p.name for p in current_docs})
+
     for file_path in doc_processor.find_new_or_changed_documents():
         await reindex_document(file_path)
 
@@ -94,6 +98,9 @@ async def get_task(task_id: str):
 
 @app.post("/reindex", tags=["index"])
 async def manual_reindex() -> dict:
+    current_docs = doc_processor.list_supported_documents()
+    vector_store.prune_sources({p.name for p in current_docs})
+
     changed = doc_processor.find_new_or_changed_documents()
     for file_path in changed:
         await reindex_document(file_path)
@@ -111,11 +118,15 @@ def _run_generation_task(task_id: str, request: GenerateRequest) -> None:
         )
         docs = vector_store.search(request.title, k=12)
         if not docs:
+            docs = vector_store.get_documents(k=12)
+
+        if not docs:
             incompatible = [p.name for p in doc_processor.find_incompatible_documents()]
             hint = "未检索到可用文献内容。"
             if incompatible:
                 hint += f" 检测到不兼容格式文件：{incompatible}。"
             hint += " 当前仅支持：pdf、txt、md、docx。若你使用 caj，请先转换为 pdf。"
+            hint += " 若已放入 PDF，请先调用 /reindex 确保文献已入库。"
             task_manager.update(
                 task_id,
                 status=TaskStatus.failed,

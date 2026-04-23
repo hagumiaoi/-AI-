@@ -113,6 +113,14 @@ class DocumentProcessor:
                 incompatible.append(file_path)
         return incompatible
 
+    def list_supported_documents(self) -> List[Path]:
+        docs: List[Path] = []
+        supported_suffixes = self.supported_suffixes()
+        for file_path in self.input_dir.iterdir():
+            if file_path.is_file() and file_path.suffix.lower() in supported_suffixes:
+                docs.append(file_path)
+        return docs
+
     def mark_processed(self, file_path: Path) -> None:
         processed = self._load_processed()
         processed[file_path.name] = self._sha256(file_path)
