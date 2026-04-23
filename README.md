@@ -61,9 +61,20 @@ uvicorn app.main:app --reload
 
 ```json
 {
-  "title": "基于RAG的学术写作系统设计与实现",
+  {
+  "title": "llm",
   "task_type": "review",
-  "tone": "严谨、客观、学术"
+  "tone": "严谨、客观、学术",
+  "sections": [
+  "摘要 (Abstract)",
+  "引言 (Introduction)",
+  "相关工作 (Related Work)",
+  "系统架构与方法 (Methodology)",
+  "实验与分析 (Results and Discussion)",
+  "结论 (Conclusion)",
+  "参考文献 (References)"
+  ]
+}
 }
 ```
 
@@ -79,8 +90,3 @@ uvicorn app.main:app --reload
 
 健康检查。
 
-## 5. 当前版本说明
-
-- 已实现：基础 RAG 检索 + 分阶段任务状态 + 文档导出
-- 未实现：严格 GB/T 7714 自动格式化、WebSocket 实时流式进度、内置 CAJ 解析
-- 你可以在这个版本上继续迭代到生产可用
