@@ -25,8 +25,10 @@ copy .env.example .env
 并在 `.env` 中填写：
 
 ```env
-OPENAI_API_KEY=你的key
-LLM_MODEL=gpt-4o-mini
+SF_API_KEY=
+SF_BASE_URL=
+SF_MODEL=
+TEMPERATURE=0
 ```
 
 ## 2. 运行

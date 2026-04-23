@@ -30,10 +30,4 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Runtime and generated artifacts
-output/
-data/simple_index.json
-data/index/processed_files.json
 
-# Optional local corpora/input docs
-input/
