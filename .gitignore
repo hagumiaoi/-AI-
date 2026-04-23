@@ -30,5 +30,19 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Runtime artifacts
+output/**
+!output/.gitkeep
+
+input/pdf/**
+input/csv/**
+input/images/**
+!input/pdf/.gitkeep
+!input/csv/.gitkeep
+!input/images/.gitkeep
+
+data/simple_index.json
+data/index/processed_files.json
+
 
 

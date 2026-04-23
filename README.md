@@ -1,14 +1,20 @@
-# AI 论文写作初版（FastAPI + RAG）
+# AI 论文写作服务（FastAPI + RAG）
 
-这是一个可运行的初版产品，支持：
+一个可本地运行的论文辅助写作服务，支持三目录输入、异步任务、流式生成与多格式输出。
 
-- 监控 `input/` 文件夹中新放入的 PDF，并自动建立索引
-- 提供 Swagger 接口提交论文写作任务
-- 异步生成论文草稿，返回 `task_id` 查询进度
-- 输出 Markdown 和 DOCX 文件
-- 自动附带引用映射与参考文献草稿
+## 功能概览
 
-## 1. 安装
+- 输入目录拆分：
+  - `input/pdf`：PDF 文献
+  - `input/csv`：结构化数据
+  - `input/images`：图片素材
+- 启动时自动增量索引，运行时递归监听三目录新增文件
+- 生成任务异步执行，通过 `task_id` 查询进度
+- 生成阶段支持终端流式输出
+- 输出格式：Markdown、DOCX、Typst（若安装 typst 可编译 PDF）
+- 引用映射自动生成，便于后续补全参考文献
+
+## 安装
 
 ```bash
 python -m venv .venv
@@ -16,77 +22,80 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-必须：配置可用模型 Key（未配置将直接失败）
+复制环境变量模板：
 
 ```bash
 copy .env.example .env
 ```
 
-并在 `.env` 中填写：
+在 `.env` 中至少配置：
 
 ```env
 SF_API_KEY=
 SF_BASE_URL=
 SF_MODEL=
-TEMPERATURE=0
+TEMPERATURE=0.2
 ```
 
-## 2. 运行
+## 运行
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
-打开 Swagger：
+Swagger: `http://127.0.0.1:8001/docs`
 
-- http://127.0.0.1:8000/docs
+## 目录结构
 
-## 3. 使用流程
+```text
+input/
+  pdf/
+  csv/
+  images/
+output/
+data/
+```
 
-1. 把 PDF 论文放进 `input/`
-2. 启动服务（启动时会索引新增/变更 PDF）
-3. 调用 `POST /generate`，传入 `title`、`task_type`、`tone`
+## 使用流程
+
+1. 把资料分别放入 `input/pdf`、`input/csv`、`input/images`
+2. 启动服务（会自动处理新增/变更文件）
+3. 调用 `POST /generate` 提交任务
 4. 用 `GET /tasks/{task_id}` 轮询状态
-5. 完成后在 `output/` 查看 `.md` 和 `.docx`
+5. 在 `output/` 查看产物
 
-说明：
-- 当前推荐输入格式：`.pdf`、`.txt`、`.md`、`.docx`
-- `.caj` 不直接兼容，请先转换为 `.pdf`
+## API
 
-## 4. API 说明
+### POST /generate
 
-### `POST /generate`
-
-示例参数：
+请求示例：
 
 ```json
 {
-  {
-  "title": "llm",
+  "title": "人工智能革新生产力统计计算",
   "task_type": "review",
-  "tone": "严谨、客观、学术",
-  "sections": [
-  "摘要 (Abstract)",
-  "引言 (Introduction)",
-  "相关工作 (Related Work)",
-  "系统架构与方法 (Methodology)",
-  "实验与分析 (Results and Discussion)",
-  "结论 (Conclusion)",
-  "参考文献 (References)"
-  ]
-}
+  "tone": "严谨、学术",
+  "user_description": "强调实证结果与图表解释",
+  "sections": ["摘要", "1. 引言", "2. 方法", "3. 结果", "4. 结论"]
 }
 ```
 
-### `GET /tasks/{task_id}`
+### GET /tasks/{task_id}
 
-返回任务状态、进度、引用映射、输出文件路径。
+返回任务状态、进度、输出文件和引用映射。
 
-### `POST /reindex`
+### POST /reindex
 
-手动触发增量索引。
+手动触发增量重建索引。
 
-### `GET /health`
+### GET /health
 
 健康检查。
+
+## 重要说明（索引一致性）
+
+- 索引 source 标识已统一为相对路径（例如 `pdf/xxx.pdf`）
+- 已修复启动清理与增量判定之间的一致性问题：
+  - 清理时同时兼容旧标识（仅文件名）与新标识（相对路径）
+  - 避免“清理后索引空、但增量判定无变化”的历史问题
 

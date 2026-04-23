@@ -40,8 +40,11 @@ class VectorStoreService:
         return set(re.findall(r"[a-z0-9_]+|[\u4e00-\u9fff]+", lowered))
 
     def add_chunks(self, chunks: List[str], source_file: str) -> None:
-        # Replace existing chunks from the same source to avoid stale duplicates.
-        self.docs = [d for d in self.docs if d.metadata.get("source") != source_file]
+        # Replace both current and legacy source ids to avoid migration duplicates.
+        replace_keys = {source_file}
+        if "/" in source_file:
+            replace_keys.add(source_file.rsplit("/", 1)[-1])
+        self.docs = [d for d in self.docs if d.metadata.get("source") not in replace_keys]
         self.docs.extend(
             [Document(page_content=chunk, metadata={"source": source_file}) for chunk in chunks]
         )

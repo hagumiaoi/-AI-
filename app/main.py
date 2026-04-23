@@ -49,6 +49,16 @@ generator = PaperGenerator()
 watcher: FileWatcher | None = None
 
 
+def _build_allowed_sources(current_docs: list[Path]) -> set[str]:
+    allowed: set[str] = set()
+    for p in current_docs:
+        sid = doc_processor.source_id(p)
+        allowed.add(sid)
+        # Keep legacy basename source ids for backward compatibility.
+        allowed.add(p.name)
+    return allowed
+
+
 async def reindex_document(file_path: Path) -> None:
     try:
         text = doc_processor.parse_document(file_path)
@@ -70,9 +80,11 @@ def reindex_document_sync(file_path: Path) -> None:
 async def startup_event() -> None:
     global watcher
     current_docs = doc_processor.list_supported_documents()
-    vector_store.prune_sources({doc_processor.source_id(p) for p in current_docs})
+    vector_store.prune_sources(_build_allowed_sources(current_docs))
 
-    for file_path in doc_processor.find_new_or_changed_documents():
+    changed_docs = doc_processor.find_new_or_changed_documents()
+
+    for file_path in changed_docs:
         await reindex_document(file_path)
 
     watcher = FileWatcher(INPUT_DIR, reindex_document_sync)
@@ -106,9 +118,10 @@ async def get_task(task_id: str):
 @app.post("/reindex", tags=["index"])
 async def manual_reindex() -> dict:
     current_docs = doc_processor.list_supported_documents()
-    vector_store.prune_sources({doc_processor.source_id(p) for p in current_docs})
+    vector_store.prune_sources(_build_allowed_sources(current_docs))
 
     changed = doc_processor.find_new_or_changed_documents()
+
     for file_path in changed:
         await reindex_document(file_path)
     return {
